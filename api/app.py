@@ -55,10 +55,11 @@ def row_to_dict(cursor, row):
     columns = [desc[0] for desc in cursor.description]
     return dict(zip(columns, row)) if row else None
 
-def validate_book_data(data):
+def validate_book_data(data, require_all=False):
     """
     Validate book data for POST/PUT.
     Returns a list of errors (empty if no errors).
+    if require_all=True, all fields must vbe completed
     """
     errors = []
 
@@ -69,6 +70,11 @@ def validate_book_data(data):
     year = data.get("yearpublished")
     authorid = data.get("authorid")
 
+    #if require_all, all fields must exist.
+    if require_all:
+        if not all([title, isbn, genre, year, authorid]):
+            errors.append("All fields must be provided; title, isbn, genre, yearpublished, authorId.")
+            
     # Title validation
     if not title:
         errors.append("Title is required.")
@@ -159,24 +165,25 @@ def create_book():
 def update_book(book_id):
     data = request.get_json()
 
-    # only validate title/genre here, others not updated
-    title = data.get("title")
-    genre = data.get("genre")
-
-    errors = validate_book_data(data)
+    # Require all fields for PUT
+    errors = validate_book_data(data, require_all=True)
     if errors:
         return jsonify({"errors": errors}), 400
 
-
     try:
         query_db(
-            'UPDATE Books SET Title = %s, Genre = %s WHERE BookID = %s;',
-            (title, genre, book_id),
+            '''
+            UPDATE Books
+            SET Title=%s, ISBN=%s, Genre=%s, YearPublished=%s, AuthorID=%s
+            WHERE BookID=%s;
+            ''',
+            (data["title"], data["isbn"], data["genre"], data["yearpublished"], data["authorid"], book_id),
             commit=True
         )
-        return jsonify({"message": "Book updated successfully"})
+        return jsonify({"message": f"Book {book_id} updated successfully"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        app.logger.error(f"Internal error updating book {book_id}: {str(e)}")  # internal log
+        return jsonify({"error": "An internal error occurred"}), 500
 
 
 @app.route('/books/<int:book_id>', methods=['DELETE'])

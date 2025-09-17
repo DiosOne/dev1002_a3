@@ -123,6 +123,10 @@ def get_books():
     rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
+    
+    if not rows:
+        return jsonify({"message": "No books found"}), 200
+
     return jsonify(rows)
 
 @app.route('/books/<int:book_id>', methods=['GET'])
@@ -205,6 +209,10 @@ def get_authors():
     rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
+    
+    if not rows:
+        return jsonify({"message": "No authors found"}), 200
+    
     return jsonify(rows)
 
 @app.route('/authors/<int:author_id>', methods=['GET'])
@@ -283,6 +291,10 @@ def get_members():
     rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
+    
+    if not rows:
+        return jsonify({"message": "No members found"}), 200
+
     return jsonify(rows)
 
 @app.route('/members/<int:member_id>', methods=['GET'])

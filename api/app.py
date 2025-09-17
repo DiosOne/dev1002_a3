@@ -190,8 +190,9 @@ def update_book(book_id):
 def delete_book(book_id):
     try:
         query_db('DELETE FROM Books WHERE BookID = %s;', (book_id,), commit=True)
-        return jsonify({"message": "Book deleted successfully"})
+        return jsonify({"message": f"Book {book_id} deleted successfully"})
     except Exception as e:
+        app.logger.error(f"Internal error deleting book {book_id}: {str(e)}")
         return jsonify({"error": str(e)}), 400
 
 
@@ -460,6 +461,7 @@ def not_found_error(e):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    app.logger.error(f"Unhandled exception: {str(e)}")
     return jsonify({
         "error": "Internal Server Error",
         "message": "An unexpected error occurred. Please try again later."

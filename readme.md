@@ -52,3 +52,7 @@ To drop all tables and reseed the database for clean testing
   - `05_update_delete.sql` – Updates and deletes existing records while demonstrating cascading behavior.  
   - `06_order_filter_calculate.sql` – Demonstrates ordering, filtering, and aggregate functions.  
 - **Purpose**: Demonstrates CRUD operations and advanced querying for assessment requirements.
+
+## **Future**
+
+- **Add sort by others (genre, year published etc)**

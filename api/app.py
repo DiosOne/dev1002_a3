@@ -112,7 +112,7 @@ def validate_book_data(data, require_all=False):
 # --- ROUTES ---
 @app.route('/')
 def home():
-    return jsonify({"message": "Library API is running. Try /books, /authors, /loans"})
+    return jsonify({"message": "Library API is running. Try /books, /authors, /loans, /members"})
 
 # --- BOOKS ---
 @app.route('/books', methods=['GET'])
@@ -356,6 +356,10 @@ def get_loans():
     rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
+    
+    if not rows:
+        return jsonify({"message": "No current loans"}), 200
+    
     return jsonify(rows)
 
 @app.route('/loans/<int:loan_id>', methods=['GET'])

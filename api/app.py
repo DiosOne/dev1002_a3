@@ -3,12 +3,12 @@ import psycopg2
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 
-# Database connection
+# --- Database connection ---
 def get_db_connection():
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
@@ -20,147 +20,192 @@ def get_db_connection():
     )
     return conn
 
+def query_db(query, params=None, one=False, commit=False):
+    """
+    Run a DB query safely.
+    - one=True returns a single row
+    - commit=True commits changes
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(query, params or ())
+        if commit:
+            conn.commit()
+        if one:
+            return cur.fetchone()
+        return cur.fetchall()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        conn.close()
+
+
+# --- Helpers ---
+def clean_str(value: str | None) -> str | None:
+    return value.strip() if value else None
+
+def rows_to_dicts(cursor):
+    columns = [desc[0] for desc in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+def row_to_dict(cursor, row):
+    columns = [desc[0] for desc in cursor.description]
+    return dict(zip(columns, row)) if row else None
+
+def validate_book(data, require_all=False):
+    """
+    Validate book data. If require_all=True, all fields must be present.
+    """
+    errors = []
+
+    title = data.get("title")
+    isbn = data.get("isbn")
+    genre = data.get("genre")
+    year = data.get("yearpublished")
+    authorid = data.get("authorid")
+
+    if not title:
+        errors.append("Title is required.")
+    elif len(title) > 255:
+        errors.append("Title too long (max 255 chars).")
+
+    if not isbn:
+        errors.append("ISBN is required.")
+    elif len(isbn) > 13:
+        errors.append("ISBN too long (max 13 chars).")
+
+    if year is not None:
+        try:
+            year = int(year)
+            if year < 0 or year > 2100:
+                errors.append("YearPublished must be a valid year.")
+        except ValueError:
+            errors.append("YearPublished must be an integer.")
+
+    if authorid is not None:
+        try:
+            int(authorid)  # just basic numeric check here
+        except ValueError:
+            errors.append("AuthorID must be an integer.")
+
+    return errors
+
+
+
 
 # --- ROUTES ---
-
-
 @app.route('/')
 def home():
-    return jsonify({"message": "Library API is running. Try /books"})
+    return jsonify({"message": "Library API is running. Try /books, /authors, /loans"})
 
-# Read all books
+# --- BOOKS ---
 @app.route('/books', methods=['GET'])
 def get_books():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Books;')
-    rows = cur.fetchall()
+    rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
     return jsonify(rows)
 
-
-# Read one book by ID
 @app.route('/books/<int:book_id>', methods=['GET'])
 def get_book(book_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Books WHERE BookID = %s;', (book_id,))
-    row = cur.fetchone()
+    row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
     if row:
         return jsonify(row)
     return jsonify({"error": "Book not found"}), 404
 
-
-# Create a new book
 @app.route('/books', methods=['POST'])
 def create_book():
     data = request.get_json()
-    title = data.get('title')
-    isbn = data.get('isbn')
-    genre = data.get('genre')
-    year = data.get('yearpublished')
-    authorid = data.get('authorid')
 
-    if not title or not isbn:
-        return jsonify({"error": "Title and ISBN are required"}), 400
-
-    conn = get_db_connection()
-    cur = conn.cursor()
+    errors = validate_book(data)
+    if errors:
+        return jsonify({"errors": errors}), 400
 
     try:
-        cur.execute(
+        row = query_db(
             '''
             INSERT INTO Books (Title, ISBN, Genre, YearPublished, AuthorID)
             VALUES (%s, %s, %s, %s, %s) RETURNING BookID;
             ''',
-            (title, isbn, genre, year, authorid)
+            (data.get("title"), data.get("isbn"), data.get("genre"),
+             data.get("yearpublished"), data.get("authorid")),
+            one=True, commit=True
         )
-        row = cur.fetchone()
         new_id = row[0] if row else None
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": str(e)}), 400
-    finally:
-        cur.close()
-        conn.close()
-
-    if new_id:
         return jsonify({"BookID": new_id, "message": "Book created successfully"}), 201
-    else:
-        return jsonify({"error": "Insert failed"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
-
-# Update a book
 @app.route('/books/<int:book_id>', methods=['PUT'])
 def update_book(book_id):
     data = request.get_json()
-    title = data.get('title')
-    genre = data.get('genre')
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE Books SET Title = %s, Genre = %s WHERE BookID = %s;',
-                (title, genre, book_id))
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({"message": "Book updated successfully"})
+    # only validate title/genre here, others not updated
+    title = data.get("title")
+    genre = data.get("genre")
+
+    if not title or not genre:
+        return jsonify({"error": "Title and Genre are required"}), 400
+
+    try:
+        query_db(
+            'UPDATE Books SET Title = %s, Genre = %s WHERE BookID = %s;',
+            (title, genre, book_id),
+            commit=True
+        )
+        return jsonify({"message": "Book updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
-# Delete a book
 @app.route('/books/<int:book_id>', methods=['DELETE'])
 def delete_book(book_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('DELETE FROM Books WHERE BookID = %s;', (book_id,))
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({"message": "Book deleted successfully"})
+    try:
+        query_db('DELETE FROM Books WHERE BookID = %s;', (book_id,), commit=True)
+        return jsonify({"message": "Book deleted successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
-if __name__ == '__main__':
-    # Use port from environment variable for deployed platforms
-    port = int(os.environ.get("PORT", 5000))
-    debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
-
-# AUTHORS ENDPOINTS
-
-# Get all authors
+# --- AUTHORS ---
 @app.route('/authors', methods=['GET'])
 def get_authors():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Authors;')
-    rows = cur.fetchall()
+    rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
     return jsonify(rows)
 
-# Get one author by ID
 @app.route('/authors/<int:author_id>', methods=['GET'])
 def get_author(author_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Authors WHERE AuthorID = %s;', (author_id,))
-    row = cur.fetchone()
+    row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
     if row:
         return jsonify(row)
     return jsonify({"error": "Author not found"}), 404
 
-# Create an author
 @app.route('/authors', methods=['POST'])
 def create_author():
     data = request.get_json()
-    name = data.get('name')
+    name = clean_str(data.get('name'))
     birth_year = data.get('birth_year')
 
     if not name:
@@ -170,11 +215,10 @@ def create_author():
     cur = conn.cursor()
     try:
         cur.execute(
-            'INSERT INTO Authors (Name, BirthYear) VALUES (%s, %s) RETURNING AuthorID;',
+            'INSERT INTO Authors (Name, BirthYear) VALUES (%s, %s) RETURNING *;',
             (name, birth_year)
         )
-        row = cur.fetchone()
-        new_id = row[0] if row else None
+        new_author = row_to_dict(cur, cur.fetchone())
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -183,72 +227,69 @@ def create_author():
         cur.close()
         conn.close()
 
-    if new_id:
-        return jsonify({"AuthorID": new_id, "message": "Author created successfully"}), 201
-    else:
-        return jsonify({"error": "Insert failed"}), 400
+    return jsonify(new_author), 201
 
-# Update an author
 @app.route('/authors/<int:author_id>', methods=['PUT'])
 def update_author(author_id):
     data = request.get_json()
-    name = data.get('name')
+    name = clean_str(data.get('name'))
     birth_year = data.get('birth_year')
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('UPDATE Authors SET Name=%s, BirthYear=%s WHERE AuthorID=%s;',
+    cur.execute('UPDATE Authors SET Name=%s, BirthYear=%s WHERE AuthorID=%s RETURNING *;',
                 (name, birth_year, author_id))
+    updated_author = row_to_dict(cur, cur.fetchone())
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Author updated successfully"})
 
-# Delete an author
+    if updated_author:
+        return jsonify(updated_author)
+    return jsonify({"error": "Author not found"}), 404
+
 @app.route('/authors/<int:author_id>', methods=['DELETE'])
 def delete_author(author_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('DELETE FROM Authors WHERE AuthorID=%s;', (author_id,))
+    cur.execute('DELETE FROM Authors WHERE AuthorID=%s RETURNING *;', (author_id,))
+    deleted_author = row_to_dict(cur, cur.fetchone())
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Author deleted successfully"})
 
+    if deleted_author:
+        return jsonify(deleted_author)
+    return jsonify({"error": "Author not found"}), 404
 
-# MEMBERS ENDPOINTS
-
-
-# Get all members
+# --- MEMBERS ---
 @app.route('/members', methods=['GET'])
 def get_members():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Members;')
-    rows = cur.fetchall()
+    rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
     return jsonify(rows)
 
-# Get one member by ID
 @app.route('/members/<int:member_id>', methods=['GET'])
 def get_member(member_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Members WHERE MemberID=%s;', (member_id,))
-    row = cur.fetchone()
+    row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
     if row:
         return jsonify(row)
     return jsonify({"error": "Member not found"}), 404
 
-# Create a member
 @app.route('/members', methods=['POST'])
 def create_member():
     data = request.get_json()
-    name = data.get('name')
-    email = data.get('email')
+    name = clean_str(data.get('name'))
+    email = clean_str(data.get('email'))
 
     if not name or not email:
         return jsonify({"error": "Name and email are required"}), 400
@@ -257,11 +298,10 @@ def create_member():
     cur = conn.cursor()
     try:
         cur.execute(
-            'INSERT INTO Members (Name, Email) VALUES (%s, %s) RETURNING MemberID;',
+            'INSERT INTO Members (Name, Email) VALUES (%s, %s) RETURNING *;',
             (name, email)
         )
-        row = cur.fetchone()
-        new_id = row[0] if row else None
+        new_member = row_to_dict(cur, cur.fetchone())
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -270,67 +310,64 @@ def create_member():
         cur.close()
         conn.close()
 
-    if new_id:
-        return jsonify({"MemberID": new_id, "message": "Member created successfully"}), 201
-    else:
-        return jsonify({"error": "Insert failed"}), 400
+    return jsonify(new_member), 201
 
-# Update a member
 @app.route('/members/<int:member_id>', methods=['PUT'])
 def update_member(member_id):
     data = request.get_json()
-    name = data.get('name')
-    email = data.get('email')
+    name = clean_str(data.get('name'))
+    email = clean_str(data.get('email'))
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('UPDATE Members SET Name=%s, Email=%s WHERE MemberID=%s;',
+    cur.execute('UPDATE Members SET Name=%s, Email=%s WHERE MemberID=%s RETURNING *;',
                 (name, email, member_id))
+    updated_member = row_to_dict(cur, cur.fetchone())
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Member updated successfully"})
 
-# Delete a member
+    if updated_member:
+        return jsonify(updated_member)
+    return jsonify({"error": "Member not found"}), 404
+
 @app.route('/members/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('DELETE FROM Members WHERE MemberID=%s;', (member_id,))
+    cur.execute('DELETE FROM Members WHERE MemberID=%s RETURNING *;', (member_id,))
+    deleted_member = row_to_dict(cur, cur.fetchone())
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Member deleted successfully"})
 
+    if deleted_member:
+        return jsonify(deleted_member)
+    return jsonify({"error": "Member not found"}), 404
 
-# LOANS / BORROWINGS ENDPOINTS
-
-
-# Get all loans
+# --- LOANS ---
 @app.route('/loans', methods=['GET'])
 def get_loans():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Loans;')
-    rows = cur.fetchall()
+    rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
     return jsonify(rows)
 
-# Get one loan by ID
 @app.route('/loans/<int:loan_id>', methods=['GET'])
 def get_loan(loan_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('SELECT * FROM Loans WHERE LoanID=%s;', (loan_id,))
-    row = cur.fetchone()
+    row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
     if row:
         return jsonify(row)
     return jsonify({"error": "Loan not found"}), 404
 
-# Create a loan
 @app.route('/loans', methods=['POST'])
 def create_loan():
     data = request.get_json()
@@ -348,12 +385,11 @@ def create_loan():
         cur.execute(
             '''
             INSERT INTO Loans (BookID, MemberID, LoanDate, ReturnDate)
-            VALUES (%s, %s, %s, %s) RETURNING LoanID;
+            VALUES (%s, %s, %s, %s) RETURNING *;
             ''',
             (book_id, member_id, loan_date, return_date)
         )
-        row = cur.fetchone()
-        new_id = row[0] if row else None
+        new_loan = row_to_dict(cur, cur.fetchone())
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -362,12 +398,8 @@ def create_loan():
         cur.close()
         conn.close()
 
-    if new_id:
-        return jsonify({"LoanID": new_id, "message": "Loan created successfully"}), 201
-    else:
-        return jsonify({"error": "Insert failed"}), 400
+    return jsonify(new_loan), 201
 
-# Update a loan
 @app.route('/loans/<int:loan_id>', methods=['PUT'])
 def update_loan(loan_id):
     data = request.get_json()
@@ -375,20 +407,33 @@ def update_loan(loan_id):
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('UPDATE Loans SET ReturnDate=%s WHERE LoanID=%s;',
+    cur.execute('UPDATE Loans SET ReturnDate=%s WHERE LoanID=%s RETURNING *;',
                 (return_date, loan_id))
+    updated_loan = row_to_dict(cur, cur.fetchone())
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Loan updated successfully"})
 
-# Delete a loan
+    if updated_loan:
+        return jsonify(updated_loan)
+    return jsonify({"error": "Loan not found"}), 404
+
 @app.route('/loans/<int:loan_id>', methods=['DELETE'])
 def delete_loan(loan_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('DELETE FROM Loans WHERE LoanID=%s;', (loan_id,))
+    cur.execute('DELETE FROM Loans WHERE LoanID=%s RETURNING *;', (loan_id,))
+    deleted_loan = row_to_dict(cur, cur.fetchone())
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"message": "Loan deleted successfully"})
+
+    if deleted_loan:
+        return jsonify(deleted_loan)
+    return jsonify({"error": "Loan not found"}), 404
+
+# --- MAIN ---
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    debug_mode = os.environ.get("FLASK_DEBUG", "False") == "True"
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

@@ -55,28 +55,33 @@ def row_to_dict(cursor, row):
     columns = [desc[0] for desc in cursor.description]
     return dict(zip(columns, row)) if row else None
 
-def validate_book(data, require_all=False):
+def validate_book_data(data):
     """
-    Validate book data. If require_all=True, all fields must be present.
+    Validate book data for POST/PUT.
+    Returns a list of errors (empty if no errors).
     """
     errors = []
 
-    title = data.get("title")
-    isbn = data.get("isbn")
-    genre = data.get("genre")
+    # Safely get and strip string fields
+    title = (data.get("title") or "").strip()
+    isbn = (data.get("isbn") or "").strip()
+    genre = (data.get("genre") or "").strip()
     year = data.get("yearpublished")
     authorid = data.get("authorid")
 
+    # Title validation
     if not title:
         errors.append("Title is required.")
     elif len(title) > 255:
         errors.append("Title too long (max 255 chars).")
 
+    # ISBN validation
     if not isbn:
         errors.append("ISBN is required.")
     elif len(isbn) > 13:
         errors.append("ISBN too long (max 13 chars).")
 
+    # YearPublished validation
     if year is not None:
         try:
             year = int(year)
@@ -85,13 +90,15 @@ def validate_book(data, require_all=False):
         except ValueError:
             errors.append("YearPublished must be an integer.")
 
+    # AuthorID validation
     if authorid is not None:
         try:
-            int(authorid)  # just basic numeric check here
+            int(authorid)
         except ValueError:
             errors.append("AuthorID must be an integer.")
 
     return errors
+
 
 
 
@@ -128,7 +135,7 @@ def get_book(book_id):
 def create_book():
     data = request.get_json()
 
-    errors = validate_book(data)
+    errors = validate_book_data(data)
     if errors:
         return jsonify({"errors": errors}), 400
 
@@ -156,8 +163,10 @@ def update_book(book_id):
     title = data.get("title")
     genre = data.get("genre")
 
-    if not title or not genre:
-        return jsonify({"error": "Title and Genre are required"}), 400
+    errors = validate_book_data(data)
+    if errors:
+        return jsonify({"errors": errors}), 400
+
 
     try:
         query_db(

@@ -432,6 +432,23 @@ def delete_loan(loan_id):
         return jsonify(deleted_loan)
     return jsonify({"error": "Loan not found"}), 404
 
+# --- GLOBAL ERROR HANDLING ---
+
+@app.errorhandler(404)
+def not_found_error(e):
+    return jsonify({
+        "error": "Resource not found",
+        "message": "The requested URL or resource does not exist."
+    }), 404
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return jsonify({
+        "error": "Internal Server Error",
+        "message": "An unexpected error occurred. Please try again later."
+    }), 500
+
 # --- MAIN ---
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

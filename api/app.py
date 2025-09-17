@@ -117,9 +117,16 @@ def home():
 # --- BOOKS ---
 @app.route('/books', methods=['GET'])
 def get_books():
+    author_id = request.args.get('authorid')
+    
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('SELECT * FROM Books;')
+    
+    if author_id:
+        cur.execute('SELECT * FROM Books WHERE AuthorID = %s;', (author_id))
+    else:
+        cur.execute('SELECT * FROM Books;')
+        
     rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
@@ -143,24 +150,24 @@ def get_book(book_id):
     
     return jsonify({"error": "Book not found"}), 404
 
-@app.route('/books', methods=['GET'])
-def get_books_auth():
-    author_id = request.args.get('authorid')
-    conn = get_db_connection()
-    cur = conn.cursor()
+# @app.route('/books', methods=['GET'])
+# def get_books_auth():
+#     author_id = request.args.get('authorid')
+#     conn = get_db_connection()
+#     cur = conn.cursor()
     
-    if author_id:
-        cur.execute('SELECT * FROM Books WHERE AuthourID = %S;', (author_id,))
-    else:
-        cur.execute('SELECT * FROM Books;')
+#     if author_id:
+#         cur.execute('SELECT * FROM Books WHERE AuthourID = %S;', (author_id,))
+#     else:
+#         cur.execute('SELECT * FROM Books;')
         
-    rows = rows_to_dicts(cur)
-    cur.close()
-    conn.close()
+#     rows = rows_to_dicts(cur)
+#     cur.close()
+#     conn.close()
     
-    if not rows:
-        return jsonify({"message": "No books found"}), 404
-    return jsonify(rows)
+#     if not rows:
+#         return jsonify({"message": "No books found"}), 404
+#     return jsonify(rows)
 
 @app.route('/books', methods=['POST'])
 def create_book():

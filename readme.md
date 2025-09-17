@@ -18,7 +18,7 @@
 
 ## Optional - Reset the database
 
-To drop all tables and reseed the database for clean testing
+To drop all tables and reseed the database for clean testing, eg if you see `relation already exists` when running the schema
 
 `\i reset_db.sql`
 
@@ -52,6 +52,32 @@ To drop all tables and reseed the database for clean testing
   - `05_update_delete.sql` – Updates and deletes existing records while demonstrating cascading behavior.  
   - `06_order_filter_calculate.sql` – Demonstrates ordering, filtering, and aggregate functions.  
 - **Purpose**: Demonstrates CRUD operations and advanced querying for assessment requirements.
+
+## **API Alternative**
+
+Instead of running SQL files manually, you can test CRUD operations via the REST API built with Flask.  
+
+### Activate your virtual environment if not already active  
+
+    source venv/bin/activate        # Linux / Mac  
+    .\venv\Scripts\activate         # Windows PowerShell
+
+### Set the Flask app entrypoint  
+
+    export FLASK_APP=api/app.py     # Linux / Mac  
+    set FLASK_APP=api/app.py        # Windows PowerShell
+
+### Run the server explicitly  
+
+    python -m flask run
+
+By default, the API will be available locally at:  
+<http://127.0.0.1:5000/>  
+
+You can also test the deployed version here:  
+<https://dev1002-a3.onrender.com/>
+
+---
 
 ## **Future**
 

@@ -137,8 +137,10 @@ def get_book(book_id):
     row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
+    
     if row:
         return jsonify(row)
+    
     return jsonify({"error": "Book not found"}), 404
 
 @app.route('/books', methods=['POST'])
@@ -223,8 +225,10 @@ def get_author(author_id):
     row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
+    
     if row:
         return jsonify(row)
+    
     return jsonify({"error": "Author not found"}), 404
 
 @app.route('/authors', methods=['POST'])
@@ -305,8 +309,10 @@ def get_member(member_id):
     row = row_to_dict(cur, cur.fetchone())
     cur.close()
     conn.close()
+    
     if row:
         return jsonify(row)
+    
     return jsonify({"error": "Member not found"}), 404
 
 @app.route('/members', methods=['POST'])

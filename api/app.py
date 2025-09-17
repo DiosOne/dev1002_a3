@@ -228,23 +228,17 @@ def create_author():
     if not name:
         return jsonify({"error": "Author name is required"}), 400
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+    
     try:
-        cur.execute(
-            'INSERT INTO Authors (Name, BirthYear) VALUES (%s, %s) RETURNING *;',
-            (name, birth_year)
+        row = query_db(
+            'INSERT INTO Authors (Name, BirthYear) VALUES (%s, %s) RETURNING AuthorID;',
+            (name, birth_year),
+            one=True, commit=True
         )
-        new_author = row_to_dict(cur, cur.fetchone())
-        conn.commit()
+        new_id = row[0] if row else None
+        return jsonify({"AuthorID": new_id, "message": f"Author {new_id} added successfully"}), 201
     except Exception as e:
-        conn.rollback()
         return jsonify({"error": str(e)}), 400
-    finally:
-        cur.close()
-        conn.close()
-
-    return jsonify(new_author), 201
 
 @app.route('/authors/<int:author_id>', methods=['PUT'])
 def update_author(author_id):
@@ -252,32 +246,33 @@ def update_author(author_id):
     name = clean_str(data.get('name'))
     birth_year = data.get('birth_year')
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE Authors SET Name=%s, BirthYear=%s WHERE AuthorID=%s RETURNING *;',
-                (name, birth_year, author_id))
-    updated_author = row_to_dict(cur, cur.fetchone())
-    conn.commit()
-    cur.close()
-    conn.close()
+    if not name or birth_year is None:
+        return jsonify({"error": "Please input all information"}), 400
 
-    if updated_author:
-        return jsonify(updated_author)
-    return jsonify({"error": "Author not found"}), 404
+    try:
+        row = query_db(
+            'UPDATE Authors SET Name=%s, BirthYear=%s WHERE AuthorID=%s RETURNING AuthorID;',
+            (name, birth_year, author_id),
+            one=True, commit=True
+        )
+        if row:
+            return jsonify({"message": f"Author {author_id} updated successfully"})
+        return jsonify({"error": "Author not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/authors/<int:author_id>', methods=['DELETE'])
 def delete_author(author_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('DELETE FROM Authors WHERE AuthorID=%s RETURNING *;', (author_id,))
-    deleted_author = row_to_dict(cur, cur.fetchone())
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    if deleted_author:
-        return jsonify(deleted_author)
-    return jsonify({"error": "Author not found"}), 404
+    try:
+        row = query_db(
+            'DELETE FROM Authors WHERE AuthorID=%s RETURNING AuthorID;',
+            (author_id,), one=True, commit=True
+        )
+        if row:
+            return jsonify({"message": f"Author {author_id} deleted successfully"})
+        return jsonify({"error": "Author not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- MEMBERS ---
 @app.route('/members', methods=['GET'])
@@ -311,23 +306,15 @@ def create_member():
     if not name or not email:
         return jsonify({"error": "Name and email are required"}), 400
 
-    conn = get_db_connection()
-    cur = conn.cursor()
     try:
-        cur.execute(
-            'INSERT INTO Members (Name, Email) VALUES (%s, %s) RETURNING *;',
-            (name, email)
+        row = query_db(
+            'INSERT INTO Members (Name, Email) VALUES (%s, %s) RETURNING MemberID;',
+            (name, email), one=True, commit=True
         )
-        new_member = row_to_dict(cur, cur.fetchone())
-        conn.commit()
+        new_id = row[0] if row else None
+        return jsonify({"MemberID": new_id, "message": f"Member {new_id} added successfully"}), 201
     except Exception as e:
-        conn.rollback()
         return jsonify({"error": str(e)}), 400
-    finally:
-        cur.close()
-        conn.close()
-
-    return jsonify(new_member), 201
 
 @app.route('/members/<int:member_id>', methods=['PUT'])
 def update_member(member_id):
@@ -335,32 +322,30 @@ def update_member(member_id):
     name = clean_str(data.get('name'))
     email = clean_str(data.get('email'))
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE Members SET Name=%s, Email=%s WHERE MemberID=%s RETURNING *;',
-                (name, email, member_id))
-    updated_member = row_to_dict(cur, cur.fetchone())
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        row = query_db(
+            'UPDATE Members SET Name=%s, Email=%s WHERE MemberID=%s RETURNING MemberID;',
+            (name, email, member_id), one=True, commit=True
+        )
+        if row:
+            return jsonify({"message": f"Member {member_id} updated successfully"})
+        return jsonify({"error": "Member not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    if updated_member:
-        return jsonify(updated_member)
-    return jsonify({"error": "Member not found"}), 404
 
 @app.route('/members/<int:member_id>', methods=['DELETE'])
 def delete_member(member_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('DELETE FROM Members WHERE MemberID=%s RETURNING *;', (member_id,))
-    deleted_member = row_to_dict(cur, cur.fetchone())
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    if deleted_member:
-        return jsonify(deleted_member)
-    return jsonify({"error": "Member not found"}), 404
+    try:
+        row = query_db(
+            'DELETE FROM Members WHERE MemberID=%s RETURNING MemberID;',
+            (member_id,), one=True, commit=True
+        )
+        if row:
+            return jsonify({"message": f"Member {member_id} deleted successfully"})
+        return jsonify({"error": "Member not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- LOANS ---
 @app.route('/loans', methods=['GET'])
@@ -396,58 +381,47 @@ def create_loan():
     if not book_id or not member_id or not loan_date:
         return jsonify({"error": "BookID, MemberID, and LoanDate are required"}), 400
 
-    conn = get_db_connection()
-    cur = conn.cursor()
     try:
-        cur.execute(
-            '''
-            INSERT INTO Loans (BookID, MemberID, LoanDate, ReturnDate)
-            VALUES (%s, %s, %s, %s) RETURNING *;
-            ''',
-            (book_id, member_id, loan_date, return_date)
+        row = query_db(
+            'INSERT INTO Loans (BookID, MemberID, LoanDate, ReturnDate) VALUES (%s, %s, %s, %s) RETURNING LoanID;',
+            (book_id, member_id, loan_date, return_date), one=True, commit=True
         )
-        new_loan = row_to_dict(cur, cur.fetchone())
-        conn.commit()
+        new_id = row[0] if row else None
+        return jsonify({"LoanID": new_id, "message": f"Loan {new_id} added successfully"}), 201
     except Exception as e:
-        conn.rollback()
         return jsonify({"error": str(e)}), 400
-    finally:
-        cur.close()
-        conn.close()
-
-    return jsonify(new_loan), 201
 
 @app.route('/loans/<int:loan_id>', methods=['PUT'])
 def update_loan(loan_id):
     data = request.get_json()
     return_date = data.get('returndate')
 
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('UPDATE Loans SET ReturnDate=%s WHERE LoanID=%s RETURNING *;',
-                (return_date, loan_id))
-    updated_loan = row_to_dict(cur, cur.fetchone())
-    conn.commit()
-    cur.close()
-    conn.close()
+    if not return_date:
+        return jsonify({"error": "Please input all information"}), 400
 
-    if updated_loan:
-        return jsonify(updated_loan)
-    return jsonify({"error": "Loan not found"}), 404
+    try:
+        row = query_db(
+            'UPDATE Loans SET ReturnDate=%s WHERE LoanID=%s RETURNING LoanID;',
+            (return_date, loan_id), one=True, commit=True
+        )
+        if row:
+            return jsonify({"message": f"Loan {loan_id} updated successfully"})
+        return jsonify({"error": "Loan not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/loans/<int:loan_id>', methods=['DELETE'])
 def delete_loan(loan_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('DELETE FROM Loans WHERE LoanID=%s RETURNING *;', (loan_id,))
-    deleted_loan = row_to_dict(cur, cur.fetchone())
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    if deleted_loan:
-        return jsonify(deleted_loan)
-    return jsonify({"error": "Loan not found"}), 404
+    try:
+        row = query_db(
+            'DELETE FROM Loans WHERE LoanID=%s RETURNING LoanID;',
+            (loan_id,), one=True, commit=True
+        )
+        if row:
+            return jsonify({"message": f"Loan {loan_id} deleted successfully"})
+        return jsonify({"error": "Loan not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- GLOBAL ERROR HANDLING ---
 

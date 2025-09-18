@@ -118,15 +118,31 @@ def home():
 @app.route('/books', methods=['GET'])
 def get_books():
     author_id = request.args.get('authorid')
+    genre = request.args.get('genre')
+    year = request.args.get('year')
     
     conn = get_db_connection()
     cur = conn.cursor()
     
+    query = 'SELECT * FROM Books'
+    params = []
+    conditions = []
+    
     if author_id:
-        cur.execute('SELECT * FROM Books WHERE AuthorID = %s;', (author_id))
-    else:
-        cur.execute('SELECT * FROM Books;')
+        conditions.append('AuthorID = %s')
+        params.append(author_id)
+    if genre:
+        conditions.append('Genre = %s')
+        params.append(genre)
+    if year:
+        conditions.append('YearPublished = %s')
+        params.append(year)
         
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+    query += ';'
+        
+    cur.execute(query, tuple(params))    
     rows = rows_to_dicts(cur)
     cur.close()
     conn.close()
@@ -417,6 +433,28 @@ def get_loan(loan_id):
     if row:
         return jsonify(row)
     return jsonify({"error": "Loan not found"}), 404
+
+@app.route('/loans/staff', methods=['GET'])
+def get_loans_by_staff():
+    conn = get_db_connection
+    cur = conn.cursor()
+    
+    query = '''
+            SELECT StaffID, COUNT(*) AS LoanCount
+            FROM Loans
+            GROUP BY StaffID
+            ORDER BY LoanCount DESC;
+            '''
+    cur.execute(query)
+    rows = rows_to_dicts(cur)
+    cur.close()
+    conn.close()
+    
+    if not rows:
+        return jsonify({"message": "No loan data found"}), 200
+    
+    return jsonify(rows)
+
 
 @app.route('/loans', methods=['POST'])
 def create_loan():
